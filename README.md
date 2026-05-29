@@ -18,11 +18,28 @@ To compare the speed, I run the test container four times.
 2. With read/write cache, on HDD.
 2. Directly on the SSD Volume.
 
-## Building the image
-```docker build -t speedtest .```
+## Build and Run Workflow
 
-## Usage
-```docker run -rm speedtest <prefix>```
+```sh
+# Build once
+docker build -t speedtest .
+
+# Run 1: HDD, no cache
+docker run --rm -v /volume1/docker/speedtest:/data speedtest hdd-no-cache
+
+# Run 2: HDD + Read Cache (NVMe read-cache active in DSM)
+docker run --rm -v /volume1/docker/speedtest:/data speedtest hdd-read-cache
+
+# Run 3: HDD + Read/Write Cache
+docker run --rm -v /volume1/docker/speedtest:/data speedtest hdd-rw-cache
+
+# Run 4: SSD Volume directly
+docker run --rm -v /volume2/speedtest:/data speedtest ssd-volume
+
+# Compare all results
+python compare.py /volume1/docker/speedtest
+```
+
 
 The prefix will be used to differenciate the test results.
 

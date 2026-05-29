@@ -24,6 +24,7 @@ SENSOR_NAMES = [f"sensor.{s}" for s in [
 ]]
 
 PHASES = 3
+PHASE_TIMEOUT = 120  # seconds — abort a phase early if it exceeds this
 
 
 def rand_sensor():
@@ -122,11 +123,14 @@ def create_table(conn):
 def run_phase(fn, repeat=PHASES):
     times = []
     result = None
+    deadline = time.perf_counter() + PHASE_TIMEOUT * repeat
     for _ in range(repeat):
         t0 = time.perf_counter()
         result = fn()
         t1 = time.perf_counter()
         times.append(t1 - t0)
+        if t1 >= deadline:
+            break
     return statistics.median(times), result
 
 
@@ -156,18 +160,24 @@ def phase1_bulk_insert(conn, db_path, n=100_000):
 def phase2_single_tx_insert(conn, db_path, n=10_000):
     def run():
         create_table(conn)
+        deadline = time.perf_counter() + PHASE_TIMEOUT
+        done = 0
         for _ in range(n):
             conn.execute(
                 "INSERT INTO measurements(sensor, value, recorded_at) VALUES (?,?,?)",
                 (rand_sensor(), rand_value(), rand_ts()),
             )
             conn.commit()
+            done += 1
+            if time.perf_counter() >= deadline:
+                print(f"    [timeout after {done} rows]", flush=True)
+                break
         fd = os.open(db_path, os.O_RDONLY)
         try:
             os.fsync(fd)
         finally:
             os.close(fd)
-        return n
+        return done
     return run_phase(run)
 
 
@@ -279,6 +289,8 @@ def phase9_reinsert(conn, db_path, n=50_000):
 
 def phase12_fsync(conn, db_path, n=1_000):
     def run():
+        deadline = time.perf_counter() + PHASE_TIMEOUT
+        done = 0
         for _ in range(n):
             conn.execute(
                 "INSERT INTO measurements(sensor, value, recorded_at) VALUES (?,?,?)",
@@ -290,7 +302,11 @@ def phase12_fsync(conn, db_path, n=1_000):
                 os.fsync(fd)
             finally:
                 os.close(fd)
-        return n
+            done += 1
+            if time.perf_counter() >= deadline:
+                print(f"    [timeout after {done} tx]", flush=True)
+                break
+        return done
     return run_phase(run)
 
 
